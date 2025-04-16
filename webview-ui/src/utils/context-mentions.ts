@@ -90,7 +90,11 @@ export function getContextMenuOptions(
 	modes?: ModeConfig[],
 ): ContextMenuQueryItem[] {
 	// Handle slash commands for modes
-	if (query.startsWith("/")) {
+	if (
+		query.startsWith("/") &&
+		selectedType !== ContextMenuOptionType.File &&
+		selectedType !== ContextMenuOptionType.Folder
+	) {
 		const modeQuery = query.slice(1)
 		if (!modes?.length) return [{ type: ContextMenuOptionType.NoResults }]
 
@@ -210,10 +214,24 @@ export function getContextMenuOptions(
 		}
 	}
 
-	const searchableItems = queryItems.map((item) => ({
-		original: item,
-		searchStr: [item.value, item.label, item.description].filter(Boolean).join(" "),
-	}))
+	const searchableItems = queryItems.map((item) => {
+		// Ensure file/folder paths consistently have a leading slash for searching
+		let searchValue = item.value
+		if (
+			(item.type === ContextMenuOptionType.File ||
+				item.type === ContextMenuOptionType.Folder ||
+				item.type === ContextMenuOptionType.OpenedFile) &&
+			item.value &&
+			!item.value.startsWith("/")
+		) {
+			searchValue = "/" + item.value
+		}
+
+		return {
+			original: { ...item, value: searchValue }, // Use normalized value in original item
+			searchStr: [searchValue, item.label, item.description].filter(Boolean).join(" "), // Use normalized value for search string
+		}
+	})
 
 	// Initialize fzf instance for fuzzy search
 	const fzf = new Fzf(searchableItems, {
@@ -266,27 +284,25 @@ export function getContextMenuOptions(
 }
 
 export function shouldShowContextMenu(text: string, position: number): boolean {
-	// Handle slash command
-	if (text.startsWith("/")) {
-		return position <= text.length && !text.includes(" ")
-	}
 	const beforeCursor = text.slice(0, position)
 	const atIndex = beforeCursor.lastIndexOf("@")
 
-	if (atIndex === -1) {
-		return false
+	// Check for an active @ mention first
+	if (atIndex !== -1) {
+		const textAfterAt = beforeCursor.slice(atIndex + 1)
+		// If there's no whitespace after @ and it's not a URL, prioritize the mention menu
+		if (!/\s/.test(textAfterAt) && !textAfterAt.toLowerCase().startsWith("http")) {
+			return true
+		}
+		// If there IS whitespace or a URL, it's not an active mention, so fall through.
 	}
 
-	const textAfterAt = beforeCursor.slice(atIndex + 1)
-
-	// Check if there's any whitespace after the '@'
-	if (/\s/.test(textAfterAt)) return false
-
-	// Don't show the menu if it's clearly a URL
-	if (textAfterAt.toLowerCase().startsWith("http")) {
-		return false
+	// Handle slash command only if NOT currently in an active @ mention
+	// (i.e., no @ found, or there was whitespace/http after the last @)
+	if (text.startsWith("/") && position <= text.length && !text.includes(" ")) {
+		return true // Show menu for slash command
 	}
 
-	// Show menu in all other cases
-	return true
+	// Default: Don't show the menu
+	return false
 }

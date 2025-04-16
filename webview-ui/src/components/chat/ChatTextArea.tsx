@@ -446,8 +446,12 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 						const query = newValue.slice(lastAtIndex + 1, newCursorPosition)
 						setSearchQuery(query)
 
-						// Send file search request if query is not empty
-						if (query.length > 0) {
+						// Check if the query is valid for initiating a file search
+						// It should have length > 0 AND not be just '/', '.', or '\' immediately after @
+						const isValidSearchQuery = query.length > 0 && !/^[/.\\\\]$/.test(query) // Removed \ before / and .
+
+						if (isValidSearchQuery) {
+							// Modified condition
 							setSelectedMenuIndex(0)
 							// Don't clear results until we have new ones
 							// This prevents flickering
@@ -471,8 +475,16 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 									requestId: reqId,
 								})
 							}, 200) // 200ms debounce
-						} else {
+						} else if (query.length === 0) {
+							// If query is empty (just @)
 							setSelectedMenuIndex(3) // Set to "File" option by default
+							setFileSearchResults([]) // Clear results for empty query
+							setSelectedType(null) // Reset type for empty query
+						} else {
+							// Query is invalid for search (e.g., "@/", "@.", "@\")
+							setSelectedMenuIndex(3) // Keep default "File" option selected
+							setFileSearchResults([]) // Clear results as the query is invalid
+							setSelectedType(ContextMenuOptionType.File) // Explicitly set type to File
 						}
 					}
 				} else {
